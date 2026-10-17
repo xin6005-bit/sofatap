@@ -163,7 +163,6 @@ public sealed class ReceiverServer(ReceiverOptions options, Credentials credenti
         credentials.Fingerprint, ReceiverPlatform.Id, Environment.MachineName);
     public void RequestLinuxAccess()
     {
-        if (!options.DryRun && input is LinuxInput linux) linux.RequestAccess();
     }
     public object NativeState()
     {

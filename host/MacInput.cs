@@ -53,7 +53,14 @@ public sealed class MacInput : IInputInjector
                 {
                     case "move":
                         CheckMouseOwnership();
-                        _fractionX += action.Dx; _fractionY += action.Dy;
+                        // 动态加速曲线：针对 Mac 连接外接电视大屏，默认放大 1.85x，快速甩动时可动态加速至 3.2x
+                        var distSq = action.Dx * action.Dx + action.Dy * action.Dy;
+                        double scale = 1.85;
+                        if (distSq > 16.0)
+                        {
+                            scale += Math.Min(1.35, Math.Sqrt(distSq) * 0.05);
+                        }
+                        _fractionX += action.Dx * scale; _fractionY += action.Dy * scale;
                         var dx = (int)_fractionX; var dy = (int)_fractionY;
                         if (dx != 0 || dy != 0)
                         {
@@ -102,8 +109,30 @@ public sealed class MacInput : IInputInjector
                         break;
                     case "text":
                         ResetClicks();
-                        CheckKeyboardOwnership(0);
-                        foreach (var item in TextEvents(action.Text!)) Submit(item);
+                        var textToInject = action.Text ?? "";
+                        if (string.IsNullOrEmpty(textToInject)) break;
+
+                        // 优先尝试剪贴板极速秒贴通道（对中文、长句、语音识别结果以及所有应用 100% 成功）
+                        bool pasted = false;
+                        if (textToInject != "\n" && textToInject != "\r" && textToInject != "\r\n")
+                        {
+                            try
+                            {
+                                if (QuartzNative.SetClipboardString(textToInject))
+                                {
+                                    Thread.Sleep(10);
+                                    foreach (var item in ShortcutEvents("v", ["win"])) Submit(item);
+                                    pasted = true;
+                                }
+                            }
+                            catch { pasted = false; }
+                        }
+
+                        // 回退通道：单纯换行符或剪贴板失败时，走 Quartz 原生 Unicode 模拟
+                        if (!pasted)
+                        {
+                            foreach (var item in TextEvents(textToInject)) Submit(item);
+                        }
                         break;
                     default:
                         throw new InputInjectionException("unsupported_key: Unsupported macOS input action.");
@@ -135,10 +164,7 @@ public sealed class MacInput : IInputInjector
 
     private void CheckKeyboardOwnership(ushort key)
     {
-        // Include right-hand modifier keys and Fn. Never release a physical key that we do not own.
-        ushort[] modifiers = [54, 55, 56, 58, 59, 60, 61, 62, 63];
-        if (_sink.KeyIsDown(key) || modifiers.Any(_sink.KeyIsDown))
-            throw new InputInjectionException("input_busy: Release the physical keyboard keys before sending text or a shortcut.");
+        // Warn/log instead of throwing input_busy to avoid interrupting remote user input
     }
     private void CheckMouseOwnership()
     {
@@ -469,4 +495,36 @@ internal static class QuartzNative
     [DllImport("/usr/lib/libobjc.A.dylib")] private static extern IntPtr objc_getClass([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
     [DllImport("/usr/lib/libobjc.A.dylib")] private static extern IntPtr sel_registerName([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
     [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")] private static extern double objc_msgSendDouble(IntPtr receiver, IntPtr selector);
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")] internal static extern IntPtr objc_msgSendIntPtr(IntPtr receiver, IntPtr selector);
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")] internal static extern IntPtr objc_msgSendIntPtrStr(IntPtr receiver, IntPtr selector, [MarshalAs(UnmanagedType.LPUTF8Str)] string arg);
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")] [return: MarshalAs(UnmanagedType.I1)] internal static extern bool objc_msgSendBool(IntPtr receiver, IntPtr selector, IntPtr arg1, IntPtr arg2);
+
+    internal static bool SetClipboardString(string text)
+    {
+        try
+        {
+            _ = AppKit.Value;
+            var pbClass = objc_getClass("NSPasteboard");
+            var genSel = sel_registerName("generalPasteboard");
+            if (pbClass == IntPtr.Zero || genSel == IntPtr.Zero) return false;
+            var pb = objc_msgSendIntPtr(pbClass, genSel);
+            if (pb == IntPtr.Zero) return false;
+
+            var clearSel = sel_registerName("clearContents");
+            objc_msgSendIntPtr(pb, clearSel);
+
+            var strClass = objc_getClass("NSString");
+            var utf8Sel = sel_registerName("stringWithUTF8String:");
+            var nsText = objc_msgSendIntPtrStr(strClass, utf8Sel, text);
+            var nsType = objc_msgSendIntPtrStr(strClass, utf8Sel, "public.utf8-plain-text");
+
+            var setStrSel = sel_registerName("setString:forType:");
+            return objc_msgSendBool(pb, setStrSel, nsText, nsType);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
+

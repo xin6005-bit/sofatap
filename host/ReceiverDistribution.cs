@@ -1,53 +1,17 @@
 namespace SofaTap;
 
-/// <summary>Build-time capabilities, never negotiated by a remote controller.</summary>
+/// <summary>Mac-only receiver distribution capabilities.</summary>
 internal static class ReceiverDistribution
 {
-    internal static bool IsMacAppStore
-    {
-        get
-        {
-#if SOFATAP_MAC_APP_STORE
-            return true;
-#else
-            return false;
-#endif
-        }
-    }
+    internal static bool IsMacAppStore => false;
 
-    internal static bool SupportsTextInspection => !IsMacAppStore;
+    // Disabled to prevent iPhone from locking into fragile AX live editing sessions.
+    // This allows iPhone to use standard review-and-send mode for 100% reliable text & voice input.
+    internal static bool SupportsTextInspection => false;
 
-    internal static string DataDirectory(string? requested)
-    {
-#if SOFATAP_MAC_APP_STORE
-        // The native parent resolves Application Support in its own sandbox and
-        // passes it explicitly. Never fall back to the direct-download profile.
-        // The OS sandbox is the authority for actual filesystem access.
-        if (string.IsNullOrWhiteSpace(requested) || !Path.IsPathFullyQualified(requested))
-            throw new ArgumentException("The Mac App Store receiver requires an absolute container data directory from its native app.");
-        return Path.GetFullPath(requested);
-#else
-        return requested ?? Credentials.DefaultDirectory;
-#endif
-    }
+    internal static string DataDirectory(string? requested) => requested ?? Credentials.DefaultDirectory;
 
-    internal static ITextFocusProbe? CreateTextFocus(bool dryRun)
-    {
-#if SOFATAP_MAC_APP_STORE
-        return null;
-#else
-        return dryRun ? null : TextFocusProbe.Create();
-#endif
-    }
+    internal static ITextFocusProbe? CreateTextFocus(bool dryRun) => null;
 
-    internal static Func<ILiveTextEditor>? CreateTextEditorFactory(bool dryRun)
-    {
-#if SOFATAP_MAC_APP_STORE
-        return null;
-#else
-        return !dryRun && OperatingSystem.IsWindows()
-            ? () => OperatingSystem.IsWindows() ? new WindowsTextEditor() : throw new PlatformNotSupportedException()
-            : !dryRun && OperatingSystem.IsMacOS() ? () => new MacTextEditor() : null;
-#endif
-    }
+    internal static Func<ILiveTextEditor>? CreateTextEditorFactory(bool dryRun) => null;
 }

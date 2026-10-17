@@ -8,7 +8,6 @@ public static class ReceiverPlatform
 
     public static string StatusCode(IInputInjector input, bool dryRun) => dryRun ? "dry_run"
         : input is MacInput mac ? mac.StatusCode
-        : input is LinuxInput linux ? linux.StatusCode
         : input.Available ? "ready" : "desktop_unavailable";
 
     public static string StatusMessage(string code) => code switch

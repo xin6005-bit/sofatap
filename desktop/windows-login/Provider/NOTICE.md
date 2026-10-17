@@ -1,1 +1,0 @@
-The authentication packing approach in Provider.cpp follows Microsoft Windows-classic-samples, Samples/CredentialProvider/cpp/CSampleCredential.cpp and helper design. Copyright (c) Microsoft Corporation. The sample is MIT licensed; see Microsoft-License.txt. Source: https://github.com/microsoft/Windows-classic-samples/tree/main/Samples/CredentialProvider

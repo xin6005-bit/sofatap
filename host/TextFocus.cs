@@ -19,9 +19,7 @@ public static class TextFocusProbe
         Unavailable();
 #else
         new CachedTextFocusProbe(() =>
-        OperatingSystem.IsWindows() ? new WindowsTextFocusProbe() :
-        OperatingSystem.IsMacOS() ? new MacTextFocusProbe() :
-        OperatingSystem.IsLinux() ? new LinuxTextFocusProbe() : new UnknownTextFocusProbe());
+        OperatingSystem.IsMacOS() ? new MacTextFocusProbe() : new UnknownTextFocusProbe());
 #endif
 
     public static ITextFocusProbe Unavailable() => new UnknownTextFocusProbe();

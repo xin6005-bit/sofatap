@@ -25,13 +25,12 @@ try
     if (!nativeUi || !Console.IsInputRedirected || !Console.IsOutputRedirected)
         throw new InvalidOperationException("Open the native Sofatap desktop app. The backend requires its private input/output pipes.");
     var dryRun = args.Contains("--dry-run", StringComparer.Ordinal);
-    if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS() && !OperatingSystem.IsLinux() && !dryRun)
-        throw new InvalidOperationException("Sofatap requires Windows, macOS or a supported Linux desktop.");
+    if (!OperatingSystem.IsMacOS() && !dryRun)
+        throw new InvalidOperationException("Sofatap requires macOS.");
     var options = new ReceiverOptions(dryRun, ReceiverDistribution.DataDirectory(Value("--data-dir")),
         Port("--port", Port("--control-port", 53319)));
     using var credentials = Credentials.LoadOrCreate(Path.GetFullPath(options.DataDirectory));
-    IInputInjector input = dryRun ? new DryRunInput() : OperatingSystem.IsMacOS() ? new MacInput()
-        : OperatingSystem.IsLinux() ? new LinuxInput() : new WindowsInput();
+    IInputInjector input = dryRun ? new DryRunInput() : new MacInput();
     using var inputLifetime = input as IDisposable;
     using var textFocus = ReceiverDistribution.CreateTextFocus(dryRun);
     var textEditorFactory = ReceiverDistribution.CreateTextEditorFactory(dryRun);
