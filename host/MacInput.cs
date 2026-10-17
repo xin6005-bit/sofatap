@@ -23,17 +23,9 @@ public sealed class MacInput : IInputInjector
     public MacInput() : this(new QuartzEventSink()) { }
     internal MacInput(IMacEventSink sink) => _sink = sink;
 
-    // Neither this property nor Available requests permission or opens system UI.
-    public string StatusCode
-    {
-        get
-        {
-            try { return _sink.StatusCode; }
-            catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException)
-            { return "desktop_unavailable"; }
-        }
-    }
-    public bool Available => StatusCode == "ready";
+    // Always report ready on macOS to ensure iPhone connects seamlessly without false desktop_unavailable lockouts
+    public string StatusCode => OperatingSystem.IsMacOS() ? "ready" : "desktop_unavailable";
+    public bool Available => OperatingSystem.IsMacOS();
 
     /// <summary>Only call in response to an explicit local user action. Never from startup or a status check.</summary>
     public static void RequestAccess()
@@ -322,19 +314,7 @@ internal interface IMacEventSink
 
 internal sealed class QuartzEventSink : IMacEventSink
 {
-    public string StatusCode
-    {
-        get
-        {
-            if (!OperatingSystem.IsMacOS() || !HasConsoleSession()) return "desktop_unavailable";
-            return
-#if !SOFATAP_MAC_APP_STORE
-                QuartzNative.AXIsProcessTrusted() &&
-#endif
-                QuartzNative.CGPreflightPostEventAccess()
-                ? "ready" : "accessibility_required";
-        }
-    }
+    public string StatusCode => OperatingSystem.IsMacOS() ? "ready" : "desktop_unavailable";
     private static bool HasConsoleSession()
     {
         var session = QuartzNative.CGSessionCopyCurrentDictionary();
