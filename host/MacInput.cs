@@ -63,6 +63,8 @@ public sealed class MacInput : IInputInjector
                             var type = _buttons.Contains(0) ? 6u : _buttons.Contains(1) ? 7u : 5u;
                             Submit(new(MacEventKind.Mouse, MouseType: type, Button: button, Position: target,
                                 DeltaX: (int)(target.X - current.X), DeltaY: (int)(target.Y - current.Y), ClickCount: type == 5 ? 0 : 1));
+                            var after = _sink.CursorPosition;
+                            try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [MOVE] from ({current.X:F1},{current.Y:F1}) to ({target.X:F1},{target.Y:F1}), actual ({after.X:F1},{after.Y:F1})\n"); } catch {}
                         }
                         _fractionX -= dx; _fractionY -= dy;
                         break;
@@ -84,24 +86,32 @@ public sealed class MacInput : IInputInjector
                             && now - _lastClickTime <= _sink.DoubleClickInterval && WithinClickDistance(position)
                             ? _clickCount + 1 : 1;
                         Submit(MouseButton(clickButton, true, position, count));
+                        Thread.Sleep(12);
                         Submit(MouseButton(clickButton, false, position, count));
                         _lastClickButton = clickButton; _lastClickPosition = position; _lastClickTime = now; _clickCount = count;
+                        try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [CLICK] btn={action.Button} at ({position.X:F1},{position.Y:F1})\n"); } catch {}
                         break;
                     case "button":
                         ResetClicks();
                         if (action.Down) CheckMouseOwnership();
                         var heldButton = ButtonCode(action.Button!);
                         if (action.Down != _buttons.Contains(heldButton))
-                            Submit(MouseButton(heldButton, action.Down, _sink.CursorPosition));
+                        {
+                            var pos = _sink.CursorPosition;
+                            Submit(MouseButton(heldButton, action.Down, pos));
+                            try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [BUTTON] btn={action.Button} down={action.Down} at ({pos.X:F1},{pos.Y:F1})\n"); } catch {}
+                        }
                         break;
                     case "key":
                         ResetClicks();
                         CheckKeyboardOwnership(KeyCode(action.Key!));
                         foreach (var item in ShortcutEvents(action.Key!, action.Modifiers!)) Submit(item);
+                        try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [KEY] key={action.Key}\n"); } catch {}
                         break;
                     case "text":
                         ResetClicks();
                         var textToInject = action.Text ?? "";
+                        try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [TEXT] len={textToInject.Length} text={textToInject}\n"); } catch {}
                         if (string.IsNullOrEmpty(textToInject)) break;
 
                         // 优先尝试剪贴板极速秒贴通道（对中文、长句、语音识别结果以及所有应用 100% 成功）
@@ -112,8 +122,12 @@ public sealed class MacInput : IInputInjector
                             {
                                 if (QuartzNative.SetClipboardString(textToInject))
                                 {
-                                    Thread.Sleep(10);
-                                    foreach (var item in ShortcutEvents("v", ["win"])) Submit(item);
+                                    Thread.Sleep(25);
+                                    foreach (var item in ShortcutEvents("v", ["win"]))
+                                    {
+                                        Submit(item);
+                                        Thread.Sleep(8);
+                                    }
                                     pasted = true;
                                 }
                             }
@@ -123,7 +137,11 @@ public sealed class MacInput : IInputInjector
                         // 回退通道：单纯换行符或剪贴板失败时，走 Quartz 原生 Unicode 模拟
                         if (!pasted)
                         {
-                            foreach (var item in TextEvents(textToInject)) Submit(item);
+                            foreach (var item in TextEvents(textToInject))
+                            {
+                                Submit(item);
+                                Thread.Sleep(8);
+                            }
                         }
                         break;
                     default:
@@ -396,13 +414,15 @@ internal sealed class QuartzEventSink : IMacEventSink
             QuartzNative.CGEventSetFlags(nativeEvent, item.Flags);
             if (item.Kind == MacEventKind.Mouse)
             {
+                QuartzNative.CGWarpMouseCursorPosition(new() { X = item.Position.X, Y = item.Position.Y });
                 QuartzNative.CGEventSetIntegerValueField(nativeEvent, 1, item.ClickCount);
                 QuartzNative.CGEventSetIntegerValueField(nativeEvent, 4, item.DeltaX);
                 QuartzNative.CGEventSetIntegerValueField(nativeEvent, 5, item.DeltaY);
             }
             if (item.Unicode is { } text)
                 QuartzNative.CGEventKeyboardSetUnicodeString(nativeEvent, (nuint)text.Length, text.Select(value => (ushort)value).ToArray());
-            // Session tap stays within the logged-in user's GUI session. CGEventPost returns void.
+            // Post to both HID tap (0) and Session tap (1) for full system-wide event dispatch
+            QuartzNative.CGEventPost(0, nativeEvent);
             QuartzNative.CGEventPost(1, nativeEvent);
         }
         finally
@@ -463,6 +483,7 @@ internal static class QuartzNative
     [DllImport(CG)] internal static extern void CGEventSetIntegerValueField(IntPtr item, uint field, long value);
     [DllImport(CG)] internal static extern void CGEventKeyboardSetUnicodeString(IntPtr item, nuint length, [In] ushort[] text);
     [DllImport(CG)] internal static extern void CGEventPost(uint tap, IntPtr item);
+    [DllImport(CG)] internal static extern int CGWarpMouseCursorPosition(Point newCursorPosition);
     [DllImport(CF)] internal static extern void CFRelease(IntPtr value);
     [DllImport(CF)] internal static extern nuint CFGetTypeID(IntPtr value);
     [DllImport(CF)] internal static extern nuint CFBooleanGetTypeID();

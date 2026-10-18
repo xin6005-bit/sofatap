@@ -115,7 +115,15 @@ public sealed class ReceiverServer(ReceiverOptions options, Credentials credenti
                     var action = Protocol.Parse(bytes);
                     lifetime.Token.ThrowIfCancellationRequested();
                     isPing = action.Type == "ping";
+                    if (!isPing)
+                    {
+                        try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [ACTION] {action.Type} id={action.Id}\n"); } catch {}
+                    }
                     ack = session.Execute(action);
+                    if (!isPing)
+                    {
+                        try { File.AppendAllText("/tmp/sofatap.log", $"{DateTime.Now:HH:mm:ss.fff} [ACK] {action.Type} ok={ack.Ok} error={ack.Error}\n"); } catch {}
+                    }
                 }
                 catch (ProtocolException error)
                 {
